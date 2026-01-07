@@ -15,10 +15,10 @@ var _current_sender_id: int = -1
 var _next_peer_id: int = 0
 
 
-func start(address: String, port: int, max_peers: int, max_channel: int = 1) -> Error:
+func start(address: String, port: int, max_peers: int, max_channels: int = 0) -> Error:
 	self._enet_host = ENetConnection.new()
 
-	var error: Error = self._enet_host.create_host_bound(address, port, max_peers, max_channel)
+	var error: Error = self._enet_host.create_host_bound(address, port, max_peers, max_channels)
 	if error != OK:
 		self._enet_host = null
 		return error
