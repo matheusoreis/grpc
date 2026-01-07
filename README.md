@@ -12,12 +12,46 @@ O plugin adiciona funcionalidades de rede à Godot, abstraindo tarefas comuns de
 ## Como Usar
 Após ativar o plugin, o singleton `Network` será registrado automaticamente e estará disponível globalmente no seu projeto.
 
-Exemplo de uso:
-```gdscript
-Network.grpc = Client.new()
+## Exemplo de Uso
+Veja abaixo como criar um servidor e cliente GRpc para executar operações matemáticas simples remotamente:
 
-var client: Client = Network.grpc
+### Servidor
+```gdscript
+extends Node
+var server := GRpcServer.new()
+
+# Funções remotas
+func soma(a: int, b: int) -> int:
+	return a + b
+
+func multiplica(a: int, b: int) -> int:
+	return a * b
+
+func _ready():
+	# Registra funções remotas
+	server.register("math", [self.soma, self.multiplica])
+	Network.grpc = server
+	server.start("127.0.0.1", 9000, 8)
 ```
+
+### Cliente
+```gdscript
+extends Node
+var client := GRpcClient.new()
+
+func _ready():
+	Network.grpc = client
+	client.start("127.0.0.1", 9000)
+
+	# Invoca métodos remotos
+	var resultado_soma = await client.invoke("math.soma", [2, 3])
+	print("Soma: ", resultado_soma) # Saída: Soma: 5
+
+	var resultado_mult = await client.invoke("math.multiplica", [4, 5])
+	print("Multiplicação: ", resultado_mult) # Saída: Multiplicação: 20
+```
+
+No exemplo acima, o servidor registra funções matemáticas e o cliente pode invocá-las remotamente usando `invoke`. O método `exec` pode ser usado para executar funções que não retornam valor.
 
 ## Estrutura dos Arquivos
 - `grpc.gd`: Script principal do plugin, responsável por registrar o singleton Network no projeto Godot.
