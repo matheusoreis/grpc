@@ -1,6 +1,6 @@
 # Godot GRpc
 
-Este é um plugin para Godot Engine que facilita a comunicação de rede. O GRpc permite criar clientes e servidores para troca de dados eficiente entre aplicações Godot.
+Godot GRpc é um plugin que simplifica a criação de sistemas cliente-servidor e a troca de dados entre projetos Godot, oferecendo uma camada robusta para comunicação de rede baseada em RPC.
 
 ## Visão Geral
 O plugin adiciona funcionalidades de rede à Godot, abstraindo tarefas comuns de comunicação entre aplicações. Ele inclui módulos para cliente, servidor, tarefas e gerenciamento de rede.
