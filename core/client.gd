@@ -49,6 +49,7 @@ func stop() -> void:
 
 	if self._server_peer:
 		self._server_peer.peer_disconnect_later()
+		await disconnected
 
 	self._enet_host.flush()
 	self._enet_host.destroy()
