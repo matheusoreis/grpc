@@ -1,4 +1,5 @@
 extends RefCounted
+class_name Network
 ## Classe utilitária estática de rede para o addon gRPC.
 ##
 ## Atua como ponto central para gerenciamento da instância gRPC (Client ou Server) via membros estáticos.
