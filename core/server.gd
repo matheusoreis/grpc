@@ -50,7 +50,7 @@ func stop() -> void:
 	self._peers.clear()
 
 ## Processa eventos de rede. Deve ser chamado a cada frame.
-func process(p_timeout_ms: int = 0) -> void:
+func poll(p_timeout_ms: int = 0) -> void:
 	if not self._enet_host:
 		return
 
