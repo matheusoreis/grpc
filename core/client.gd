@@ -1,40 +1,46 @@
-## Cliente gRPC para comunicação com o servidor.
+## Client-side implementation for the Rpc system (ERPC).
 ##
-## [b]GRpcClient[/b] gerencia a conexão ENet do lado do cliente e permite realizar chamadas remotas 
-## tanto de forma unidirecional ([method exec]) quanto bidirecional ([method invoke]).
+## This class manages the client connection using ENet and allows
+## sending and receiving RPC calls to/from the server.
 ##
-## [b]Tutorial Rápido:[/b]
-## 1. Instancie a classe: [code]var client = GRpcClient.new()[/code]
-## 2. Conecte ao servidor: [code]client.start("127.0.0.1", 8080)[/code]
-## 3. Registre funções: [code]client.register("MyUI", [self.update_chat])[/code]
-## 4. Chame o servidor: [code]client.exec("Server.login", ["user", "pass"])[/code]
-class_name GRpcClient
-extends GRpcBase
+## [b]Example:[/b]
+## [codeblock]
+## var client = RpcClient.new()
+## client.start("127.0.0.1", 8080)
+## client.register("Client", [self.print_message])
+## client.exec("Server.log", ["Hello from client!"])
+## [/codeblock]
+class_name RpcClient
+extends RpcBase
 
-## Emitido quando ocorre um erro crítico de rede no cliente.
+## Emitted when a network error occurs.
 signal network_error()
-## Emitido quando a conexão com o servidor é estabelecida com sucesso.
+## Emitted when the client successfully connects to the server.
 signal connected()
-## Emitido quando a conexão com o servidor é perdida ou encerrada.
+## Emitted when the client disconnects from the server.
 signal disconnected()
 
-## [b]Interno:[/b] O host ENet do cliente.
+## Internal ENet host instance.
 var _enet_host: ENetConnection = null
-## [b]Interno:[/b] A referência ao peer do servidor.
+## Internal peer representing the server.
 var _server_peer: ENetPacketPeer = null
 
-## Inicia a conexão com o servidor.
-## [br][br]
-## Retorna [code]OK[/code] se a tentativa de conexão foi iniciada com sucesso.
-func start(p_address: String, p_port: int, p_max_channels: int = 0) -> Error:
-	self._enet_host = ENetConnection.new()
 
-	var error: Error = self._enet_host.create_host(1, p_max_channels)
+## Starts the client connection to the specified address and port.
+## [br]
+## [b]address[/b]: The IP address to connect to (e.g., "127.0.0.1").
+## [b]port[/b]: The port number.
+## [b]max_channels[/b]: Maximum number of channels (default: 0).
+## Returns [constant OK] on success or an [enum Error] code on failure.
+func start(address: String, port: int, max_channels: int = 0) -> Error:
+	_enet_host = ENetConnection.new()
+
+	var error: Error = _enet_host.create_host(1, max_channels)
 	if error != OK:
-		self._enet_host = null
+		_enet_host = null
 		return error
 
-	self._server_peer = self._enet_host.connect_to_host(p_address, p_port, p_max_channels)
+	_server_peer = _enet_host.connect_to_host(address, port, max_channels)
 	if not self._server_peer:
 		self._enet_host.destroy()
 		self._enet_host = null
@@ -42,62 +48,79 @@ func start(p_address: String, p_port: int, p_max_channels: int = 0) -> Error:
 
 	return OK
 
-## Encerra a conexão e limpa os recursos.
+
+## Stops the client and disconnects from the server.
 func stop() -> void:
-	if not self._enet_host:
+	if not _enet_host:
 		return
 
-	if self._server_peer:
-		self._server_peer.peer_disconnect_later()
+	if _server_peer:
+		_server_peer.peer_disconnect_later()
 		await disconnected
 
-	self._enet_host.flush()
-	self._enet_host.destroy()
-	self._enet_host = null
-	self._server_peer = null
+	_enet_host.flush()
+	_enet_host.destroy()
+	_enet_host = null
+	_server_peer = null
 
-## Processa os eventos de rede. Deve ser chamado a cada frame.
-func poll(p_timeout_ms: int = 0) -> void:
-	if not self._enet_host:
+
+## Polls network events. Must be called every frame or typically in [method Node._process].
+## [br]
+## [b]timeout_ms[/b]: Max time in milliseconds to spend processing events (default: 0).
+func poll(timeout_ms: int = 0) -> void:
+	if not _enet_host:
 		return
 
 	var start_time_ms: int = Time.get_ticks_msec()
-	self._poll_events()
+	_poll_events()
 
-	while (Time.get_ticks_msec() - start_time_ms) < p_timeout_ms:
-		self._poll_events()
+	while (Time.get_ticks_msec() - start_time_ms) < timeout_ms:
+		_poll_events()
 
-## Executa uma função no servidor sem esperar resposta.
-func exec(p_function_path: StringName, p_arguments_list: Array = [], p_channel_id: int = 0) -> void:
-	var packet_array: Array = [Type.EXEC, p_function_path.hash(), p_arguments_list]
-	self._send_raw(0, var_to_bytes(packet_array), p_channel_id)
 
-## Invoca uma função no servidor e aguarda o resultado ([code]await[/code]).
-func invoke(p_function_path: StringName, p_arguments_list: Array = [], p_channel_id: int = 0) -> Variant:
-	var task_id: int = self._reserve_task_slot()
+## Executes a remote function on the server without waiting for a result (Fire-and-forget).
+## [br]
+## [b]function_path[/b]: The full path of the function (e.g., "Namespace.function").
+## [b]arguments_list[/b]: Arguments to pass to the function.
+## [b]channel_id[/b]: The channel to send the packet on.
+func exec(function_path: StringName, arguments_list: Array = [], channel_id: int = 0) -> void:
+	var packet_array: Array = [Type.EXEC, function_path.hash(), arguments_list]
+	_send_raw(0, var_to_bytes(packet_array), channel_id)
+
+
+## Invokes a remote function on the server and awaits the result.
+## [br]
+## [b]function_path[/b]: The full path of the function.
+## [b]arguments_list[/b]: Arguments to pass to the function.
+## [b]channel_id[/b]: The channel to send the packet on.
+## Returns the result from the server execution.
+func invoke(function_path: StringName, arguments_list: Array = [], channel_id: int = 0) -> Variant:
+	var task_id: int = _reserve_task_slot()
 	if task_id == -1:
 		push_error("[CLIENT] Limite de tasks excedido.")
 		return null
 
-	var task_instance: GRpcTask = GRpcTask.new()
-	self._tasks[task_id] = task_instance
+	var task_instance = RpcTask.new()
+	_tasks[task_id] = task_instance
 
-	var packet_array: Array = [Type.INVOKE, p_function_path.hash(), p_arguments_list, task_id]
-	self._send_raw(0, var_to_bytes(packet_array), p_channel_id)
+	var packet_array: Array = [Type.INVOKE, function_path.hash(), arguments_list, task_id]
+	_send_raw(0, var_to_bytes(packet_array), channel_id)
 
 	var result_value: Variant = await task_instance.done
-	self._release_task_slot(task_id)
+	_release_task_slot(task_id)
 
 	return result_value
 
-## [b]Interno:[/b] Implementação de envio via ENet.
-func _send_raw(_p_peer_id: int, p_data_buffer: PackedByteArray, p_channel_id: int) -> void:
-	if self._server_peer:
-		self._server_peer.send(p_channel_id, p_data_buffer, ENetPacketPeer.FLAG_RELIABLE)
 
-## [b]Interno:[/b] Verifica novos eventos no host.
+## [b]Internal:[/b] ENet implementation for sending raw data.
+func _send_raw(_peer_id: int, data_buffer: PackedByteArray, channel_id: int) -> void:
+	if _server_peer:
+		_server_peer.send(channel_id, data_buffer, ENetPacketPeer.FLAG_RELIABLE)
+
+
+## [b]Internal:[/b] Checks for new network events from the host.
 func _poll_events() -> void:
-	var event: Array = self._enet_host.service()
+	var event: Array = _enet_host.service()
 	var event_type: int = event[0]
 
 	if event_type == ENetConnection.EventType.EVENT_NONE:
@@ -105,26 +128,29 @@ func _poll_events() -> void:
 
 	match event_type:
 		ENetConnection.EventType.EVENT_CONNECT:
-			self._on_connected(event[1])
+			_on_connected(event[1])
 		ENetConnection.EventType.EVENT_DISCONNECT:
-			self._on_disconnected(event[1])
+			_on_disconnected(event[1])
 		ENetConnection.EventType.EVENT_RECEIVE:
-			self._on_packet_received(event[1], event[2])
+			_on_packet_received(event[1], event[2])
 		ENetConnection.EventType.EVENT_ERROR:
-			self.network_error.emit()
+			network_error.emit()
 
-## [b]Interno:[/b] Callback de conexão.
-func _on_connected(p_peer: ENetPacketPeer) -> void:
-	self._server_peer = p_peer
-	self.connected.emit()
 
-## [b]Interno:[/b] Callback de desconexão.
-func _on_disconnected(p_peer: ENetPacketPeer) -> void:
-	if p_peer == self._server_peer:
-		self._server_peer = null
-		self.disconnected.emit()
+## [b]Internal:[/b] Callback for successful connection.
+func _on_connected(peer: ENetPacketPeer) -> void:
+	_server_peer = peer
+	connected.emit()
 
-## [b]Interno:[/b] Callback de recebimento de pacote.
-func _on_packet_received(p_peer: ENetPacketPeer, p_channel_id: int) -> void:
-	if p_peer == self._server_peer:
-		self._process_packet(0, p_peer.get_packet(), p_channel_id)
+
+## [b]Internal:[/b] Callback for disconnection.
+func _on_disconnected(peer: ENetPacketPeer) -> void:
+	if peer == _server_peer:
+		_server_peer = null
+		disconnected.emit()
+
+
+## [b]Internal:[/b] Callback for receiving a packet.
+func _on_packet_received(peer: ENetPacketPeer, channel_id: int) -> void:
+	if peer == _server_peer:
+		_process_packet(0, peer.get_packet(), channel_id)

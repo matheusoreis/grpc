@@ -1,8 +1,9 @@
-extends RefCounted
-class_name Network
-## Classe utilitária estática de rede para o addon gRPC.
+## Static utility class for globally accessing the active Rpc instance.
 ##
-## Atua como ponto central para gerenciamento da instância gRPC (Client ou Server) via membros estáticos.
+## This class acts as a central access point for the RPC system,
+## allowing easy retrieval of the current [RpcClient] or [RpcServer] instance.
+class_name Network
+extends RefCounted
 
-## Instância ativa do gRPC.
-static var grpc: GRpcBase = null
+## The active Rpc instance (Client or Server).
+static var rpc: RpcBase = null

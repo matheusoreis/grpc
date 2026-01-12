@@ -1,88 +1,110 @@
-# Godot GRpc
+# ERPC (Enhanced RPC)
 
-Godot GRpc é um plugin que simplifica a criação de sistemas cliente-servidor e a troca de dados entre projetos Godot, oferecendo uma camada robusta para comunicação de rede baseada em RPC.
+**ERPC** is a lightweight, asynchronous, and type-safe RPC system for Godot 4, built on top of `ENetConnection`. It allows for remote function calls without relying on `NodePath`, `SceneTree`, or the engine's built-in RPC system (which locks you into the scene tree structure).
 
-## Visão Geral
-O plugin adiciona funcionalidades de rede à Godot, abstraindo tarefas comuns de comunicação entre aplicações. Ele inclui módulos para cliente, servidor, tarefas e gerenciamento de rede.
+> **Why ERPC?**
+> Godot's built-in RPC is great, but sometimes you want a dedicated networking layer that doesn't depend on your scene hierarchy. ERPC gives you full control with explicit function registration, scoping, and request-response patterns (awaitable RPCs).
 
-## Instalação
-1. Copie a pasta `grpc` para o diretório `addons` do seu projeto Godot.
-2. No editor Godot, acesse `Projeto > Configurações do Projeto > Plugins` e ative o plugin `grpc`.
+## Features
 
-## Como Usar
-Após ativar o plugin, o singleton `Network` será registrado automaticamente e estará disponível globalmente no seu projeto.
+- **Protocol Agnostic**: Logic is decoupled from `Node` and `SceneTree`.
+- **Explicit Registration**: Only expose what you want, securely.
+- **Namespaces**: Organize your API with scopes (e.g., `Auth.login`, `World.spawn`).
+- **Async/Await**: Support for `invoke` to wait for return values from the remote peer.
+- **Fire-and-Forget**: Standard `exec` for immediate messages.
+- **Type Validation**: Automatic argument type checking before function execution.
 
-## Exemplo de Uso
-Veja abaixo como criar um servidor e cliente GRpc para executar operações matemáticas simples remotamente:
+## Installation
 
-### Servidor
+1. Copy the `addons/grpc` folder to your project's `addons/` directory. (We recommend renaming it to `addons/erpc` if you prefer).
+2. Enable the plugin in **Project Settings > Plugins**.
+
+## Quick Start
+
+### 1. Setting up the Server
+
+The server manages connections and exposes functions to clients.
+
 ```gdscript
 extends Node
-var server := GRpcServer.new()
 
-# Funções remotas
-func soma(a: int, b: int) -> int:
-	return a + b
+var server: RpcServer
 
-func multiplica(a: int, b: int) -> int:
-	return a * b
+func _ready() -> void:
+    server = RpcServer.new()
+    
+    # Start server on port 8080 (max 32 peers)
+    var err = server.start("*", 8080, 32)
+    if err != OK:
+        printerr("Failed to start server")
+        return
+        
+    # Register functions under the "Chat" scope
+    server.register("Chat", [self.broadcast_message])
+    
+    # Listen for connections
+    server.peer_connected.connect(func(id): print("Peer connected: ", id))
 
-func _ready():
-	# Registra funções remotas
-	server.register("math", [self.soma, self.multiplica])
-	Network.grpc = server
-	server.start("127.0.0.1", 9000, 8)
+func _process(_delta: float) -> void:
+    # Important: Poll events every frame
+    server.poll()
+
+func broadcast_message(sender_id: int, message: String) -> void:
+    # Relay message to all other clients
+    server.exec(null, "Chat.receive", [message])
 ```
 
-### Cliente
+### 2. Setting up the Client
+
+The client connects to the server and can invoke functions.
+
 ```gdscript
 extends Node
-var client := GRpcClient.new()
 
-func _ready():
-	Network.grpc = client
-	client.start("127.0.0.1", 9000)
+var client: RpcClient
 
-	# Invoca métodos remotos
-	var resultado_soma = await client.invoke("math.soma", [2, 3])
-	print("Soma: ", resultado_soma) # Saída: Soma: 5
+func _ready() -> void:
+    client = RpcClient.new()
+    
+    # Connect to localhost
+    client.start("127.0.0.1", 8080)
+    
+    # Register client-side functions
+    client.register("Chat", [self.on_message_received])
 
-	var resultado_mult = await client.invoke("math.multiplica", [4, 5])
-	print("Multiplicação: ", resultado_mult) # Saída: Multiplicação: 20
+func _process(_delta: float) -> void:
+    client.poll()
+
+# Awaiting a return value from the server (Invoke)
+func get_server_time() -> void:
+    var time_ms = await client.invoke("Server.get_time", [])
+    print("Server time is: ", time_ms)
+
+func on_message_received(msg: String) -> void:
+    print("New message: ", msg)
 ```
 
-No exemplo acima, o servidor registra funções matemáticas e o cliente pode invocá-las remotamente usando `invoke`. O método `exec` pode ser usado para executar funções que não retornam valor.
+## API Reference
 
-## Estrutura dos Arquivos
-- `grpc.gd`: Script principal do plugin, responsável por registrar o singleton Network no projeto Godot.
-- `core/base.gd`: Define a classe base GRpcBase, responsável pelo registro e gerenciamento dos métodos remotos, além de controlar tarefas e lookup de funções.
-- `core/client.gd`: Implementa o cliente GRpcClient, que conecta a servidores, envia e recebe dados.
-- `core/server.gd`: Implementa o servidor GRpcServer, que aceita conexões de clientes, gerencia peers e distribui chamadas remotas.
-- `core/task.gd`: Define GRpcTask, usado para gerenciar tarefas assíncronas e emitir sinais quando concluídas.
-- `network/network.gd`: Script do singleton Network, responsável por armazenar a instância GRpc (Client ou Server) e processar eventos de rede.
-- `plugin.cfg`: Arquivo de configuração do plugin para integração com o editor Godot.
-- `LICENSE`: Termos de licença do projeto.
+### RpcServer
 
-## Licença
-MIT License
+- `start(address, port, max_peers)`: Starts the ENet host.
+- `exec(target, function, args)`: Sends a fire-and-forget call. `target` can be valid Peer ID, Array of IDs, or `null` (Broadcast).
+- `invoke(peer_id, function, args)`: Calls a function and waits for the result (`await`).
+- `kick(peer_id)`: Disconnects a user.
 
-Copyright (c) 2026 Matheus Reis
+### RpcClient
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+- `start(address, port)`: Connects to a server.
+- `exec(function, args)`: Sends a command to the server.
+- `invoke(function, args)`: Sends a command and waits for a return value.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+### RpcBase (Shared)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- `register(scope, functions)`: Registers a list of methods (Callables) to be accessible remotely.
+- `unregister(scope, functions)`: Removes access to methods.
+- `poll()`: Must be called periodically to process network packets.
 
+## License
+
+MIT License.
